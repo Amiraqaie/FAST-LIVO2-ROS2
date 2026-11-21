@@ -593,20 +593,7 @@ void LIVMapper::handleLIO()
     RGBpointBodyToWorld(&laserCloudFullRes->points[i], &laserCloudWorld->points[i]);
   }
   *pcl_w_wait_pub = *laserCloudWorld;
-  if (pubBody->get_subscription_count())
-  {
-    PointCloudXYZI body(size, 1);
-    for (int i = 0; i < size; ++i)
-      RGBpointBodyLidarToIMU(&laserCloudFullRes->points[i], &body[i]);
-    sensor_msgs::msg::PointCloud2 msg;
-    pcl::toROSMsg(body, msg);
-    msg.header = odomAftMapped.header;
-    msg.header.frame_id = "livox_frame";
-    pubBody->publish(msg);
-  }
-
   publish_frame_world(pubLaserCloudFullRes, vio_manager);
-  if (pub_effect_point_en) publish_effect_world(pubLaserCloudEffect, voxelmap_manager->ptpl_list_);
   publish_path(pubPath);
 
   frame_num++;
@@ -1257,31 +1244,42 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
   std::vector<Projection> projections;
   std::vector<uint32_t> colors;
   constexpr uint32_t no_color = 0xffffffffu;
+  cv::Mat1d depth;
+  const auto &img = vio_manager->img_rgb;
+  const auto project = [&](const V3D &world, V2D &uv, double &z)
+  {
+    const V3D camera = vio_manager->new_frame_->w2f(world);
+    z = camera.z();
+    if (z <= 0 || camera.norm() <= blind_rgb_points) return false;
+    uv = vio_manager->new_frame_->w2c(world);
+    return uv.allFinite() && uv.x() >= 1 && uv.y() >= 1 &&
+           uv.x() < img.cols - 1 && uv.y() < img.rows - 1;
+  };
+  const auto sample_rgb = [&](const V2D &uv)
+  {
+    const V3F bgr = vio_manager->getInterpolatedPixel(img, uv);
+    return (uint32_t(bgr[2]) << 16) | (uint32_t(bgr[1]) << 8) | uint32_t(bgr[0]);
+  };
   if (camera_update && vio_manager->new_frame_ && vio_manager->img_rgb.type() == CV_8UC3 &&
       !vio_manager->img_rgb.empty())
   {
-    const auto &img = vio_manager->img_rgb;
-    cv::Mat1d depth(img.rows, img.cols, std::numeric_limits<double>::infinity());
+    depth = cv::Mat1d(img.rows, img.cols, std::numeric_limits<double>::infinity());
     colors.assign(pcl_w_wait_pub->size(), no_color);
     for (size_t i = 0; i < pcl_w_wait_pub->size(); ++i)
     {
       const auto &p = (*pcl_w_wait_pub)[i];
-      const V3D world(p.x, p.y, p.z);
-      const V3D camera = vio_manager->new_frame_->w2f(world);
-      if (camera.z() <= 0 || camera.norm() <= blind_rgb_points) continue;
-      const V2D uv = vio_manager->new_frame_->w2c(world);
-      if (!uv.allFinite() || uv.x() < 1 || uv.y() < 1 ||
-          uv.x() >= img.cols - 1 || uv.y() >= img.rows - 1) continue;
+      V2D uv;
+      double z;
+      if (!project(V3D(p.x, p.y, p.z), uv, z)) continue;
       double &nearest = depth(int(uv.y()), int(uv.x()));
-      nearest = std::min(nearest, camera.z());
-      projections.push_back({i, uv, camera.z()});
+      nearest = std::min(nearest, z);
+      projections.push_back({i, uv, z});
     }
     for (const auto &projection : projections)
     {
       const V2D &uv = projection.uv;
       if (projection.depth != depth(int(uv.y()), int(uv.x()))) continue;
-      const V3F bgr = vio_manager->getInterpolatedPixel(img, uv);
-      colors[projection.index] = (uint32_t(bgr[2]) << 16) | (uint32_t(bgr[1]) << 8) | uint32_t(bgr[0]);
+      colors[projection.index] = sample_rgb(uv);
     }
   }
   if (dense_map_en && !camera_update) dense_scan_begin = dense_display_map.size();
@@ -1337,6 +1335,52 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
     pcl::toROSMsg(scan, msg);
     msg.header = odomAftMapped.header;
     pubLaserCloudFullRes->publish(msg);
+    if (pub_effect_point_en)
+    {
+      pcl::PointCloud<MapPoint> effective;
+      const auto &matches = voxelmap_manager->ptpl_list_;
+      effective.reserve(matches.size());
+      for (const auto &match : matches)
+      {
+        const auto &world = match.point_w_;
+        MapPoint point{};
+        point.x = world.x();
+        point.y = world.y();
+        point.z = world.z();
+        point.rgb = 0x808080;
+        V2D uv;
+        double z;
+        if (!depth.empty() && project(world, uv, z) &&
+            z <= depth(int(uv.y()), int(uv.x())) + filter_size_surf_min)
+        {
+          point.rgb = sample_rgb(uv);
+          point.has_color = 1;
+        }
+        effective.push_back(point);
+      }
+      pcl::toROSMsg(effective, msg);
+      msg.header = odomAftMapped.header;
+      pubLaserCloudEffect->publish(msg);
+    }
+
+    if (pubBody->get_subscription_count())
+    {
+      const auto &pose = odomAftMapped.pose.pose;
+      const Eigen::Quaterniond rotation(pose.orientation.w, pose.orientation.x,
+                                        pose.orientation.y, pose.orientation.z);
+      const V3D position(pose.position.x, pose.position.y, pose.position.z);
+      for (auto &point : scan)
+      {
+        const V3D body = rotation.conjugate() * (V3D(point.x, point.y, point.z) - position);
+        point.x = body.x();
+        point.y = body.y();
+        point.z = body.z();
+      }
+      pcl::toROSMsg(scan, msg);
+      msg.header = odomAftMapped.header;
+      msg.header.frame_id = "livox_frame";
+      pubBody->publish(msg);
+    }
   }
 
   /**************** save map ****************/
@@ -1457,23 +1501,6 @@ void LIVMapper::publish_map()
   msg.header = odomAftMapped.header;
   pubLaserCloudMap->publish(msg);
   map_dirty = false;
-}
-
-void LIVMapper::publish_effect_world(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubLaserCloudEffect, const std::vector<PointToPlane> &ptpl_list)
-{
-  int effect_feat_num = ptpl_list.size();
-  PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(effect_feat_num, 1));
-  for (int i = 0; i < effect_feat_num; i++)
-  {
-    laserCloudWorld->points[i].x = ptpl_list[i].point_w_[0];
-    laserCloudWorld->points[i].y = ptpl_list[i].point_w_[1];
-    laserCloudWorld->points[i].z = ptpl_list[i].point_w_[2];
-  }
-  sensor_msgs::msg::PointCloud2 laserCloudFullRes3;
-  pcl::toROSMsg(*laserCloudWorld, laserCloudFullRes3);
-  laserCloudFullRes3.header.stamp = odomAftMapped.header.stamp;
-  laserCloudFullRes3.header.frame_id = "odom";
-  pubLaserCloudEffect->publish(laserCloudFullRes3);
 }
 
 template <typename T> void LIVMapper::set_posestamp(T &out)

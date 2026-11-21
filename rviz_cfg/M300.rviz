@@ -29,7 +29,7 @@ Visualization Manager:
         Durability Policy: Volatile
         Depth: 1
       Position Transformer: XYZ
-      Color Transformer: FlatColor
+      Color Transformer: RGB8
       Color: 255; 190; 45
       Style: Points
       Size (Pixels): 2

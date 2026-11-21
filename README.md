@@ -195,8 +195,8 @@ With `publish.dense_map_en: true`, it accumulates every finite point from
 the undistorted scans after preprocessing. With the setting off, it keeps
 one point per `preprocess.filter_size_surf` voxel. Dense mode uses more
 memory and bandwidth as the map grows.
-The scan and map carry intensity, packed RGB, and a byte field `has_color`.
-Gray indicates a voxel awaiting a camera observation. A measured gray
+All four point clouds carry packed RGB and a byte field `has_color`.
+Gray indicates a point without a camera color. A measured gray
 surface has `has_color=1` as do other measured colors.
 
 
