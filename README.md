@@ -190,8 +190,11 @@ launches consume raw camera images by default. For the optional compressed
 `/left_camera/image` relay, pass `republish_compressed:=true`.
 
 RViz shows the registered scan, effective scan-to-plane points, and the
-accumulated LiDAR map. The map keeps one point per
-`preprocess.filter_size_surf` voxel and publishes snapshots at up to 1 Hz.
+accumulated LiDAR map. The map publishes snapshots at up to 1 Hz.
+With `publish.dense_map_en: true`, it accumulates every finite point from
+the undistorted scans after preprocessing. With the setting off, it keeps
+one point per `preprocess.filter_size_surf` voxel. Dense mode uses more
+memory and bandwidth as the map grows.
 The scan and map carry intensity, packed RGB, and a byte field `has_color`.
 Gray indicates a voxel awaiting a camera observation. A measured gray
 surface has `has_color=1` as do other measured colors.

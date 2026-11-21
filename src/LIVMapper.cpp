@@ -1284,26 +1284,40 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
       colors[projection.index] = (uint32_t(bgr[2]) << 16) | (uint32_t(bgr[1]) << 8) | uint32_t(bgr[0]);
     }
   }
+  if (dense_map_en && !camera_update) dense_scan_begin = dense_display_map.size();
+  size_t dense_index = dense_scan_begin;
   for (size_t i = 0; i < pcl_w_wait_pub->size(); ++i)
   {
     const auto &p = (*pcl_w_wait_pub)[i];
     if (!p.getVector3fMap().allFinite()) continue;
     MapPoint point{p.x, p.y, p.z, p.intensity, p.normal_x, p.normal_y, p.normal_z,
                    p.curvature, 0x808080, 0};
-    const VOXEL_LOCATION key(std::floor(p.x / filter_size_surf_min),
-                             std::floor(p.y / filter_size_surf_min),
-                             std::floor(p.z / filter_size_surf_min));
-    auto &stored = display_map.try_emplace(key, point).first->second;
     if (!colors.empty() && colors[i] != no_color)
     {
       point.rgb = colors[i];
       point.has_color = 1;
-      stored = point;
     }
-    if (finished_scan)
+
+    if (dense_map_en)
     {
+      // The VIO pass revisits the same scan in order and fills in its RGB.
+      if (!camera_update) dense_display_map.push_back(point);
+      else if (point.has_color) dense_display_map[dense_index] = point;
+      ++dense_index;
+    }
+    else
+    {
+      const VOXEL_LOCATION key(std::floor(p.x / filter_size_surf_min),
+                               std::floor(p.y / filter_size_surf_min),
+                               std::floor(p.z / filter_size_surf_min));
+      auto &stored = display_map.try_emplace(key, point).first->second;
+      if (point.has_color) stored = point;
       point.rgb = stored.rgb;
       point.has_color = stored.has_color;
+    }
+
+    if (finished_scan)
+    {
       scan.push_back(point);
       if (pcd_save_en && pcd_save_type == 0 && slam_mode_ == LIVO)
       {
@@ -1428,11 +1442,18 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
 void LIVMapper::publish_map()
 {
   if (!map_dirty || !pubLaserCloudMap->get_subscription_count()) return;
-  pcl::PointCloud<MapPoint> map;
-  map.reserve(display_map.size());
-  for (const auto &entry : display_map) map.push_back(entry.second);
   sensor_msgs::msg::PointCloud2 msg;
-  pcl::toROSMsg(map, msg);
+  if (dense_map_en)
+  {
+    pcl::toROSMsg(dense_display_map, msg);
+  }
+  else
+  {
+    pcl::PointCloud<MapPoint> map;
+    map.reserve(display_map.size());
+    for (const auto &entry : display_map) map.push_back(entry.second);
+    pcl::toROSMsg(map, msg);
+  }
   msg.header = odomAftMapped.header;
   pubLaserCloudMap->publish(msg);
   map_dirty = false;

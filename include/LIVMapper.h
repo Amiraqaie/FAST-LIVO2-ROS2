@@ -89,6 +89,8 @@ public:
   bool lidar_map_inited = false, pcd_save_en = false, img_save_en = false, pub_effect_point_en = false, pose_output_en = false, ros_driver_fix_en = false, hilti_en = false;
   int img_save_interval = 1, pcd_save_interval = -1, pcd_save_type = 0;
   std::unordered_map<VOXEL_LOCATION, MapPoint> display_map;
+  pcl::PointCloud<MapPoint> dense_display_map;
+  size_t dense_scan_begin = 0;
   bool map_dirty = false;
   rclcpp::TimerBase::SharedPtr map_timer;
   void publish_map();
