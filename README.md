@@ -175,15 +175,13 @@ Follow the upstream
 
 ### 3.1 Native (colcon)
 
-Build against the custom ROS 2 `fast_lio` package that provides
-`fast_lio/msg/LioState` and the `highrate_odom` executable. Include that
-checkout (with its ikd-Tree submodule initialized) in the same colcon
-workspace, or source its install before building `fast_livo`. The Docker
-command below assumes that checkout is at `../FAST_LIO`.
+This package provides `fast_livo/msg/LioState` and builds the
+`highrate_odom` executable in the same workspace.
+A direct `/lio_state` subscriber must use `fast_livo/msg/LioState`.
 
 The mapper publishes `/Odometry`, `/lio_state`, `/path`, `/cloud_registered`,
 `/cloud_registered_body`, `/cloud_effected`, and `/Laser_map`. The ROS 2 mapping
-launches also start FAST-LIO's separate high-rate node for `/Odometry_imu`
+launches also start the separate high-rate node for `/Odometry_imu`
 (`highrate:=false` disables it). The mapper supplies that node with IMU
 samples on `/laserMapping/imu_si` using its calibrated acceleration scale
 and corrected sensor timestamps. Odometry uses `odom` and `livox_frame`.
@@ -212,7 +210,7 @@ source ~/fast_ws/install/setup.bash
 A self-contained ROS 2 Humble image is provided. Quickstart:
 
 ```bash
-docker build --build-context fast_lio=../FAST_LIO -t fast-livo2:humble .
+docker build -t fast-livo2:humble .
 docker run --rm -it --net=host fast-livo2:humble
 ```
 

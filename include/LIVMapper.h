@@ -21,7 +21,7 @@ which is included as part of this source code package.
 #else
 #include <cv_bridge/cv_bridge.h>
 #endif
-#include <fast_lio/msg/lio_state.hpp>
+#include <fast_livo/msg/lio_state.hpp>
 #include "map_point.h"
 #include <nav_msgs/msg/path.hpp>
 #include <vikit/camera_loader.h>
@@ -93,7 +93,7 @@ public:
   rclcpp::TimerBase::SharedPtr map_timer;
   void publish_map();
   void publish_lio_state();
-  rclcpp::Publisher<fast_lio::msg::LioState>::SharedPtr pubState;
+  rclcpp::Publisher<fast_livo::msg::LioState>::SharedPtr pubState;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pubScaledImu;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubBody;
 

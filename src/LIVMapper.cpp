@@ -325,7 +325,7 @@ void LIVMapper::initializeSubscribersAndPublishers()
   map_timer = node->create_wall_timer(std::chrono::seconds(1), std::bind(&LIVMapper::publish_map, this));
   pubOdomAftMapped = this->node->create_publisher<nav_msgs::msg::Odometry>("/Odometry", 10);
   pubPath = this->node->create_publisher<nav_msgs::msg::Path>("/path", 10);
-  pubState = node->create_publisher<fast_lio::msg::LioState>("/lio_state", 20);
+  pubState = node->create_publisher<fast_livo::msg::LioState>("/lio_state", 20);
   pubScaledImu = node->create_publisher<sensor_msgs::msg::Imu>("~/imu_si", rclcpp::SensorDataQoS());
 }
 
@@ -1506,7 +1506,7 @@ void LIVMapper::publish_path(const rclcpp::Publisher<nav_msgs::msg::Path>::Share
 void LIVMapper::publish_lio_state()
 {
   if (!imu_en || p_imu->imu_need_init) return;
-  fast_lio::msg::LioState msg;
+  fast_livo::msg::LioState msg;
   msg.header.frame_id = "odom";
   const auto &measure = LidarMeasures.measures.back();
   msg.header.stamp = sec2Stamp(LidarMeasures.lio_vio_flg == VIO ? measure.vio_time : measure.lio_time);

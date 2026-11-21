@@ -82,7 +82,8 @@ find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(fast_lio REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(pcl_ros REQUIRED)
@@ -127,7 +128,6 @@ include_directories(
 )
 
 set(dependencies
-  fast_lio
   rclcpp
   rclpy
   geometry_msgs
@@ -156,13 +156,25 @@ set(COMMON_DEPENDENCIES OpenMP::OpenMP_CXX fmt::fmt)
 #   ${vikit_ros_LIBRARIES}/libvikit_ros.so
 # )
 
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/LioState.msg"
+  DEPENDENCIES std_msgs
+)
+rosidl_get_typesupport_target(lio_typesupport ${PROJECT_NAME} "rosidl_typesupport_cpp")
+ament_export_dependencies(rosidl_default_runtime)
+
+add_executable(highrate_odom src/highrate_odom.cpp)
+ament_target_dependencies(highrate_odom rclcpp sensor_msgs nav_msgs)
+target_link_libraries(highrate_odom Eigen3::Eigen ${lio_typesupport})
+target_compile_definitions(highrate_odom PRIVATE EIGEN_DONT_PARALLELIZE)
+
 # Add libraries
-add_library(vio src/vio.cpp src/frame.cpp src/visual_point.cpp)
-add_library(lio src/voxel_map.cpp)
-add_library(pre src/preprocess.cpp)
-add_library(imu_proc src/IMU_Processing.cpp)
-add_library(laser_mapping src/LIVMapper.cpp)
-add_library(utils src/utils.cpp)
+add_library(vio STATIC src/vio.cpp src/frame.cpp src/visual_point.cpp)
+add_library(lio STATIC src/voxel_map.cpp)
+add_library(pre STATIC src/preprocess.cpp)
+add_library(imu_proc STATIC src/IMU_Processing.cpp)
+add_library(laser_mapping STATIC src/LIVMapper.cpp)
+add_library(utils STATIC src/utils.cpp)
 
 ament_target_dependencies(vio ${dependencies} )
 ament_target_dependencies(lio ${dependencies})
@@ -176,6 +188,7 @@ find_library(VIKIT_COMMON_LIB vikit_common
 find_library(VIKIT_ROS_LIB vikit_ros
     HINTS ${CMAKE_INSTALL_PREFIX}/../vikit_ros/lib)
 target_link_libraries(laser_mapping
+    ${lio_typesupport}
     ${VIKIT_COMMON_LIB}
     ${VIKIT_ROS_LIB}
     ${COMMON_DEPENDENCIES}
@@ -211,6 +224,7 @@ endif()
 # Install the executable
 install(TARGETS
   fastlivo_mapping
+  highrate_odom
   DESTINATION lib/${PROJECT_NAME}
 )
 

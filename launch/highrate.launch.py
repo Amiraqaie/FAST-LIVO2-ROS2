@@ -16,7 +16,7 @@ def highrate_node(context):
         return []
     noise = {key: params.get(key, default) for key, default in (
         ('acc_cov', 1.0), ('gyr_cov', 1.0), ('b_acc_cov', 0.0001), ('b_gyr_cov', 0.0001))}
-    return [Node(package='fast_lio', executable='highrate_odom',
+    return [Node(package='fast_livo', executable='highrate_odom',
                  parameters=[noise, {'imu_topic': '/laserMapping/imu_si', 'acc_scale': 1.0}],
                  output='screen')]
 
