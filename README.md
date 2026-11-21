@@ -175,31 +175,6 @@ Follow the upstream
 
 ### 3.1 Native (colcon)
 
-This package provides `fast_livo/msg/LioState` and builds the
-`highrate_odom` executable in the same workspace.
-A direct `/lio_state` subscriber must use `fast_livo/msg/LioState`.
-
-The mapper publishes `/Odometry`, `/lio_state`, `/path`, `/cloud_registered`,
-`/cloud_registered_body`, `/cloud_effected`, and `/Laser_map`. The ROS 2 mapping
-launches also start the separate high-rate node for `/Odometry_imu`
-(`highrate:=false` disables it). The mapper supplies that node with IMU
-samples on `/laserMapping/imu_si` using its calibrated acceleration scale
-and corrected sensor timestamps. Odometry uses `odom` and `livox_frame`.
-Your external TF node owns the transforms. The MID-360 and Avia hardware
-launches consume raw camera images by default. For the optional compressed
-`/left_camera/image` relay, pass `republish_compressed:=true`.
-
-RViz shows the registered scan, effective scan-to-plane points, and the
-accumulated LiDAR map. The map publishes snapshots at up to 1 Hz.
-With `publish.dense_map_en: true`, it accumulates every finite point from
-the undistorted scans after preprocessing. With the setting off, it keeps
-one point per `preprocess.filter_size_surf` voxel. Dense mode uses more
-memory and bandwidth as the map grows.
-All four point clouds carry packed RGB and a byte field `has_color`.
-Gray indicates a point without a camera color. A measured gray
-surface has `has_color=1` as do other measured colors.
-
-
 ```bash
 cd ~/fast_ws/src
 git clone https://github.com/U-AMC/FAST-LIVO2-AGX.git fast_livo

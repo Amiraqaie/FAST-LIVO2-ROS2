@@ -51,7 +51,7 @@ public:
 
   ofstream fout_imu;
   double IMU_mean_acc_norm;
-  V3D unbiased_gyr = V3D::Zero();
+  V3D unbiased_gyr;
 
   V3D cov_acc;
   V3D cov_gyr;

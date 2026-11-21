@@ -1,19 +1,15 @@
 # syntax=docker/dockerfile:1.7
-# Use the official OSRF ROS image
-ARG BUILDER_TAG=latest
-FROM amiraqaie1376/builder:${BUILDER_TAG}
+ARG ROS_DISTRO=humble
+FROM ros:${ROS_DISTRO}-perception-jammy
 
-# Set environment variables for ROS
-ENV ROS_DISTRO=humble
-ENV ROS_ROOT=/opt/ros/$ROS_DISTRO
-ENV PATH=$ROS_ROOT/bin:$PATH
-ENV LD_LIBRARY_PATH=$ROS_ROOT/lib:$LD_LIBRARY_PATH
-ENV PYTHONPATH=$ROS_ROOT/lib/python3/dist-packages:$PYTHONPATH
+ARG ROS_DISTRO
 ARG WS=/fast_livo_ws
+
 ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DISTRO=${ROS_DISTRO} \
     WS=${WS} \
     CPATH=/opt/ros/${ROS_DISTRO}/include
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -72,209 +68,7 @@ WORKDIR ${WS}
 RUN mkdir -p ${WS}/src \
     && git clone --depth=1 https://github.com/Livox-SDK/livox_ros_driver2.git ${WS}/src/livox_ros_driver2
 
-# Clone and patch rpg_vikit camera_loader.cpp
-RUN git clone --depth=1 \
-    https://github.com/U-AMC/rpg_vikit_rational_polynomial.git \
-    ${WS}/src/rpg_vikit \
-    && python3 - <<'PY'
-from pathlib import Path
-
-p = Path("/fast_livo_ws/src/rpg_vikit/vikit_ros/src/camera_loader.cpp")
-s = p.read_text()
-
-start = s.index("/// Load from ROS Namespace")
-end = s.index("} // namespace camera_loader", start)
-
-replacement = r'''
-/// Load a single camera from a remote ROS parameter namespace.
-bool loadFromRosNs(
-    const rclcpp::Node::SharedPtr &nh,
-    const std::string &ns,
-    vk::AbstractCamera *&cam)
-{
-    cam = nullptr;
-
-    const std::string cam_model =
-        getRemoteParam<std::string>(nh, ns, "cam_model", "");
-
-    if (cam_model == "Ocam")
-    {
-        cam = new vk::OmniCamera(
-            getRemoteParam<std::string>(nh, ns, "cam_calib_file", ""));
-    }
-    else if (cam_model == "Pinhole")
-    {
-        cam = new vk::PinholeCamera(
-            getRemoteParam<int>(nh, ns, "cam_width", 0),
-            getRemoteParam<int>(nh, ns, "cam_height", 0),
-            getRemoteParam<double>(nh, ns, "scale", 1.0),
-            getRemoteParam<double>(nh, ns, "cam_fx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_fy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_d0", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_d1", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_d2", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_d3", 0.0));
-    }
-    else if (cam_model == "EquidistantCamera")
-    {
-        cam = new vk::EquidistantCamera(
-            getRemoteParam<int>(nh, ns, "cam_width", 0),
-            getRemoteParam<int>(nh, ns, "cam_height", 0),
-            getRemoteParam<double>(nh, ns, "scale", 1.0),
-            getRemoteParam<double>(nh, ns, "cam_fx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_fy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cy", 0.0),
-            getRemoteParam<double>(nh, ns, "k1", 0.0),
-            getRemoteParam<double>(nh, ns, "k2", 0.0),
-            getRemoteParam<double>(nh, ns, "k3", 0.0),
-            getRemoteParam<double>(nh, ns, "k4", 0.0));
-    }
-    else if (cam_model == "PolynomialCamera")
-    {
-        cam = new vk::PolynomialCamera(
-            getRemoteParam<int>(nh, ns, "cam_width", 0),
-            getRemoteParam<int>(nh, ns, "cam_height", 0),
-            getRemoteParam<double>(nh, ns, "cam_fx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_fy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_skew", 0.0),
-            getRemoteParam<double>(nh, ns, "k2", 0.0),
-            getRemoteParam<double>(nh, ns, "k3", 0.0),
-            getRemoteParam<double>(nh, ns, "k4", 0.0),
-            getRemoteParam<double>(nh, ns, "k5", 0.0),
-            getRemoteParam<double>(nh, ns, "k6", 0.0),
-            getRemoteParam<double>(nh, ns, "k7", 0.0));
-    }
-    else if (cam_model == "RationalPolynomial")
-    {
-        cam = new vk::RationalPolynomialCamera(
-            getRemoteParam<int>(nh, ns, "cam_width", 0),
-            getRemoteParam<int>(nh, ns, "cam_height", 0),
-            getRemoteParam<double>(nh, ns, "cam_fx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_fy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cy", 0.0),
-            getRemoteParam<double>(nh, ns, "k1", 0.0),
-            getRemoteParam<double>(nh, ns, "k2", 0.0),
-            getRemoteParam<double>(nh, ns, "k3", 0.0),
-            getRemoteParam<double>(nh, ns, "k4", 0.0),
-            getRemoteParam<double>(nh, ns, "k5", 0.0),
-            getRemoteParam<double>(nh, ns, "k6", 0.0),
-            getRemoteParam<double>(nh, ns, "p1", 0.0),
-            getRemoteParam<double>(nh, ns, "p2", 0.0));
-    }
-    else if (cam_model == "ATAN")
-    {
-        cam = new vk::ATANCamera(
-            getRemoteParam<int>(nh, ns, "cam_width", 0),
-            getRemoteParam<int>(nh, ns, "cam_height", 0),
-            getRemoteParam<double>(nh, ns, "cam_fx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_fy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cx", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_cy", 0.0),
-            getRemoteParam<double>(nh, ns, "cam_d0", 0.0));
-    }
-    else
-    {
-        RCLCPP_ERROR(
-            nh->get_logger(),
-            "Unsupported camera model '%s' in namespace '%s'",
-            cam_model.c_str(), ns.c_str());
-        return false;
-    }
-
-    return cam != nullptr;
-}
-
-
-/// Load multiple cameras from a remote ROS parameter namespace.
-bool loadFromRosNs(
-    const rclcpp::Node::SharedPtr &nh,
-    const std::string &ns,
-    std::vector<vk::AbstractCamera *> &cam_list)
-{
-    cam_list.clear();
-
-    const int cam_num =
-        getRemoteParam<int>(nh, ns, "cam_num", 0);
-
-    if (cam_num <= 0)
-    {
-        RCLCPP_ERROR(
-            nh->get_logger(),
-            "Invalid cam_num=%d in namespace '%s'",
-            cam_num, ns.c_str());
-        return false;
-    }
-
-    for (int i = 0; i < cam_num; ++i)
-    {
-        const std::string cam_ns =
-            ns + "/cam_" + std::to_string(i);
-
-        const std::string cam_model =
-            getRemoteParam<std::string>(nh, cam_ns, "cam_model", "");
-
-        if (cam_model == "FishPoly")
-        {
-            cam_list.push_back(new vk::PolynomialCamera(
-                getRemoteParam<int>(nh, cam_ns, "image_width", 0),
-                getRemoteParam<int>(nh, cam_ns, "image_height", 0),
-                getRemoteParam<double>(nh, cam_ns, "A11", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "A22", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "u0", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "v0", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "A12", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "k2", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "k3", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "k4", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "k5", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "k6", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "k7", 0.0)));
-        }
-        else if (cam_model == "Pinhole")
-        {
-            cam_list.push_back(new vk::PinholeCamera(
-                getRemoteParam<int>(nh, cam_ns, "cam_width", 0),
-                getRemoteParam<int>(nh, cam_ns, "cam_height", 0),
-                getRemoteParam<double>(nh, cam_ns, "scale", 1.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_fx", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_fy", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_cx", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_cy", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_d0", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_d1", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_d2", 0.0),
-                getRemoteParam<double>(nh, cam_ns, "cam_d3", 0.0)));
-        }
-        else
-        {
-            RCLCPP_ERROR(
-                nh->get_logger(),
-                "Unsupported camera model '%s' in namespace '%s'",
-                cam_model.c_str(), cam_ns.c_str());
-
-            for (auto *camera : cam_list)
-                delete camera;
-
-            cam_list.clear();
-            return false;
-        }
-    }
-
-    return true;
-}
-
-'''
-
-p.write_text(s[:start] + replacement + s[end:])
-print("Successfully patched all camera_loader.cpp parameter-loading branches.")
-PY
-
+RUN git clone --depth=1 https://github.com/U-AMC/rpg_vikit_rational_polynomial.git ${WS}/src/rpg_vikit
 
 # vikit_common is a plain CMake package; install it globally and let colcon build vikit_ros.
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash \
