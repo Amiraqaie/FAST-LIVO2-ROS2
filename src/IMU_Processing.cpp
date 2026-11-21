@@ -144,9 +144,23 @@ void ImuProcess::IMU_init(const MeasureGroup &meas, StatesGroup &state_inout, in
     N++;
   }
   IMU_mean_acc_norm = mean_acc.norm();
-  state_inout.gravity = -mean_acc / mean_acc.norm() * G_m_s2;
-  state_inout.rot_end = Eye3d; // Exp(mean_acc.cross(V3D(0, 0, -1 / scale_gravity)));
-  state_inout.bias_g = Zero3d; // mean_gyr;
+  if (!(IMU_mean_acc_norm > 1e-6) || !mean_acc.allFinite() || !mean_gyr.allFinite())
+  {
+    b_first_frame = true;
+    N = 1;
+    return;
+  }
+  state_inout.rot_end = Eigen::Quaterniond::FromTwoVectors(mean_acc / IMU_mean_acc_norm, V3D::UnitZ()).toRotationMatrix();
+  state_inout.gravity = V3D(0, 0, -G_m_s2);
+  state_inout.bias_g = mean_gyr;
+  // Match the FAST-LIO priors in the FAST-LIVO2 state ordering.
+  state_inout.cov.block<6,6>(0,0).setIdentity();
+  state_inout.cov.block<3,3>(7,7).setIdentity();
+  state_inout.cov.block<3,3>(10,10) = Eye3d * 1e-4;
+  state_inout.cov.block<3,3>(13,13) = Eye3d * 1e-3;
+  state_inout.cov.block<3,3>(16,16) = (Eye3d - V3D::UnitZ() * V3D::UnitZ().transpose()) * (G_m_s2 * G_m_s2 * 1e-5);
+  // Keep the Cartesian gravity prior invertible for the mapper's information update.
+  state_inout.cov(18,18) = 1e-8;
 
   last_imu = meas.imu.back();
 }
@@ -424,6 +438,7 @@ void ImuProcess::UndistortPcl(LidarMeasureGroup &lidar_meas, StatesGroup &state_
 
       /* save the poses at each IMU measurements */
       angvel_last = angvel_avr;
+      unbiased_gyr = angvel_avr;
       acc_s_last = acc_imu;
 
       // cout<<setw(20)<<"offset_t: "<<offs_t<<"stamp2Sec(tail->header.stamp):
@@ -558,7 +573,6 @@ void ImuProcess::Process2(LidarMeasureGroup &lidar_meas, StatesGroup &stat, Poin
   if (imu_need_init)
   {
     double pcl_end_time = lidar_meas.lio_vio_flg == LIO ? meas.lio_time : meas.vio_time;
-    // lidar_meas.last_lio_update_time = pcl_end_time;
 
     if (meas.imu.empty()) { return; };
     /// The very first lidar frame
@@ -572,6 +586,8 @@ void ImuProcess::Process2(LidarMeasureGroup &lidar_meas, StatesGroup &stat, Poin
     {
       // cov_acc *= pow(G_m_s2 / mean_acc.norm(), 2);
       imu_need_init = false;
+      last_prop_end_time = pcl_end_time;
+      lidar_meas.last_lio_update_time = pcl_end_time;
       RCLCPP_INFO(rclcpp::get_logger(""), "IMU Initials: Gravity: %.4f %.4f %.4f %.4f; acc covarience: "
                "%.8f %.8f %.8f; gry covarience: %.8f %.8f %.8f \n",
                stat.gravity[0], stat.gravity[1], stat.gravity[2], mean_acc.norm(), cov_acc[0], cov_acc[1], cov_acc[2], cov_gyr[0], cov_gyr[1],

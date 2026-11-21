@@ -126,7 +126,7 @@ public:
   double td_last_grad_sum   = 0.0;       // diagnostic
   double td_last_jac_sq_sum = 0.0;       // diagnostic
 
-  SubSparseMap *visual_submap;
+  SubSparseMap *visual_submap = nullptr;
   std::vector<std::vector<V3D>> rays_with_sample_points;
 
   double compute_jacobian_time, update_ekf_time;

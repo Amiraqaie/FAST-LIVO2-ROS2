@@ -3,6 +3,8 @@
 
 import os
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
@@ -50,6 +52,8 @@ def generate_launch_description():
 
     return LaunchDescription([
         use_rviz_arg,
+        DeclareLaunchArgument('republish_compressed', default_value='false',
+                              description='Republish compressed /left_camera/image as raw'),
         avia_config_arg,
         camera_config_arg,
         use_respawn_arg,
@@ -60,22 +64,11 @@ def generate_launch_description():
         #     shell=True
         # ),
 
-        # use parameter_blackboard as global parameters server and load camera params
-        Node(
-            package='demo_nodes_cpp',
-            executable='parameter_blackboard',
-            name='parameter_blackboard',
-            # namespace='laserMapping',
-            parameters=[
-                camera_params_file,
-            ],
-            output='screen'
-        ),
-
         # republish compressed image to raw image
         # https://robotics.stackexchange.com/questions/110939/how-do-i-remap-compressed-video-to-raw-video-in-ros2
         # ros2 run image_transport republish compressed raw --ros-args --remap in:=/left_camera/image --remap out:=/left_camera/image
         Node(
+            condition=IfCondition(LaunchConfiguration("republish_compressed")),
             package="image_transport",
             executable="republish",
             name="republish",
@@ -97,6 +90,7 @@ def generate_launch_description():
             name="laserMapping",
             parameters=[
                 avia_params_file,
+                camera_params_file,
             ],
             # https://docs.ros.org/en/humble/How-To-Guides/Getting-Backtraces-in-ROS-2.html
             prefix=[
@@ -104,6 +98,12 @@ def generate_launch_description():
                 # ("valgrind --log-file=./valgrind_report.log --tool=memcheck --leak-check=full --show-leak-kinds=all -s --track-origins=yes --show-reachable=yes --undef-value-errors=yes --track-fds=yes")
             ],
             output="screen"
+        ),
+
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(
+                get_package_share_directory("fast_livo"), "launch", "highrate.launch.py")),
+            launch_arguments={"mapper_params": avia_params_file}.items(),
         ),
 
         Node(

@@ -31,8 +31,9 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|aarch64|ARM|AARCH64)")
   add_definitions(-DARM_ARCH)
 else()
   # x86-64 (Intel/AMD) optimizations
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -mtune=native -funroll-loops") #-flto
-  message(STATUS "Using general x86 optimizations: -O3 -march=native -mtune=native -funroll-loops") 
+  # Keep Eigen alignment compatible with distribution PCL binaries.
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -mtune=native -funroll-loops")
+  message(STATUS "Using general x86 optimizations: -O3 -mtune=native -funroll-loops")
   add_definitions(-DX86_ARCH)
 endif()
 
@@ -81,6 +82,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(fast_lio REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(pcl_ros REQUIRED)
@@ -125,6 +127,7 @@ include_directories(
 )
 
 set(dependencies
+  fast_lio
   rclcpp
   rclpy
   geometry_msgs

@@ -3,12 +3,10 @@
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::NodeOptions options;
-  rclcpp::Node::SharedPtr nh;
-  image_transport::ImageTransport it_(nh);
-  LIVMapper mapper(nh, "laserMapping");
-  mapper.initializeSubscribersAndPublishers(nh, it_);
-  mapper.run(nh);
+  auto node = std::make_shared<rclcpp::Node>("laserMapping");
+  LIVMapper mapper(node);
+  mapper.initializeSubscribersAndPublishers();
+  mapper.run();
   rclcpp::shutdown();
   return 0;
 }

@@ -68,7 +68,7 @@
 
     imu:
       imu_en: true
-      imu_int_frame: 30
+      imu_int_frame: 10
       acc_cov: 2.0 # 0.5
       gyr_cov: 0.1 # 0.3
       b_acc_cov: 0.0001 # 0.1
@@ -89,15 +89,10 @@
       half_map_size: 100
       sliding_thresh: 8.0
 
-    uav:
-      imu_rate_odom: false
-      gravity_align_en: false
-
     publish:
       dense_map_en: true
-      pub_effect_point_en: false 
+      pub_effect_point_en: true
       pub_plane_en: false
-      pub_scan_num: 1
       blind_rgb_points: 0.0
 
     evo:

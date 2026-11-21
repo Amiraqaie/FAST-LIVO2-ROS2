@@ -175,6 +175,30 @@ Follow the upstream
 
 ### 3.1 Native (colcon)
 
+Build against the custom ROS 2 `fast_lio` package that provides
+`fast_lio/msg/LioState` and the `highrate_odom` executable. Include that
+checkout (with its ikd-Tree submodule initialized) in the same colcon
+workspace, or source its install before building `fast_livo`. The Docker
+command below assumes that checkout is at `../FAST_LIO`.
+
+The mapper publishes `/Odometry`, `/lio_state`, `/path`, `/cloud_registered`,
+`/cloud_registered_body`, `/cloud_effected`, and `/Laser_map`. The ROS 2 mapping
+launches also start FAST-LIO's separate high-rate node for `/Odometry_imu`
+(`highrate:=false` disables it). The mapper supplies that node with IMU
+samples on `/laserMapping/imu_si` using its calibrated acceleration scale
+and corrected sensor timestamps. Odometry uses `odom` and `livox_frame`.
+Your external TF node owns the transforms. The MID-360 and Avia hardware
+launches consume raw camera images by default. For the optional compressed
+`/left_camera/image` relay, pass `republish_compressed:=true`.
+
+RViz shows the registered scan, effective scan-to-plane points, and the
+accumulated LiDAR map. The map keeps one point per
+`preprocess.filter_size_surf` voxel and publishes snapshots at up to 1 Hz.
+The scan and map carry intensity, packed RGB, and a byte field `has_color`.
+Gray indicates a voxel awaiting a camera observation. A measured gray
+surface has `has_color=1` as do other measured colors.
+
+
 ```bash
 cd ~/fast_ws/src
 git clone https://github.com/U-AMC/FAST-LIVO2-AGX.git fast_livo
@@ -188,7 +212,7 @@ source ~/fast_ws/install/setup.bash
 A self-contained ROS 2 Humble image is provided. Quickstart:
 
 ```bash
-docker build -t fast-livo2:humble .
+docker build --build-context fast_lio=../FAST_LIO -t fast-livo2:humble .
 docker run --rm -it --net=host fast-livo2:humble
 ```
 

@@ -98,6 +98,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash \
 RUN cp ${WS}/src/livox_ros_driver2/package_ROS2.xml ${WS}/src/livox_ros_driver2/package.xml \
     && cp -r ${WS}/src/livox_ros_driver2/launch_ROS2 ${WS}/src/livox_ros_driver2/launch
 
+COPY --from=fast_lio . ${WS}/src/fast_lio
 COPY . ${WS}/src/fast_livo
 
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash \

@@ -3,6 +3,8 @@
 
 import os
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
@@ -49,23 +51,15 @@ def generate_launch_description():
 
     return LaunchDescription([
         use_rviz_arg,
+        DeclareLaunchArgument('republish_compressed', default_value='false',
+                              description='Republish compressed /left_camera/image as raw'),
         mid360_config_arg,
         camera_config_arg,
         use_respawn_arg,
 
-        # use parameter_blackboard as global parameters server and load camera params
-        Node(
-            package='demo_nodes_cpp',
-            executable='parameter_blackboard',
-            name='parameter_blackboard',
-            parameters=[
-                camera_params_file,
-            ],
-            output='screen'
-        ),
-
         # republish compressed image to raw image
         Node(
+            condition=IfCondition(LaunchConfiguration("republish_compressed")),
             package="image_transport",
             executable="republish",
             name="republish",
@@ -87,8 +81,15 @@ def generate_launch_description():
             name="laserMapping",
             parameters=[
                 mid360_params_file,
+                camera_params_file,
             ],
             output="screen"
+        ),
+
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(
+                get_package_share_directory("fast_livo"), "launch", "highrate.launch.py")),
+            launch_arguments={"mapper_params": mid360_params_file}.items(),
         ),
 
         Node(
