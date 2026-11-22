@@ -14,6 +14,13 @@ which is included as part of this source code package.
 #include <vikit/camera_loader.h>
 
 using namespace Sophus;
+
+namespace
+{
+constexpr char kOdomFrame[] = "odom";
+constexpr char kBodyFrame[] = "livox_frame";
+}
+
 LIVMapper::LIVMapper(rclcpp::Node::SharedPtr &node, std::string node_name)
     : node(std::make_shared<rclcpp::Node>(node_name)),
       extT(0, 0, 0),
@@ -45,7 +52,7 @@ LIVMapper::LIVMapper(rclcpp::Node::SharedPtr &node, std::string node_name)
   initializeFiles();
   initializeComponents(this->node);          // initialize components errors
   path.header.stamp = this->node->now();
-  path.header.frame_id = "camera_init";
+  path.header.frame_id = kOdomFrame;
 }
 
 LIVMapper::~LIVMapper() {}
@@ -85,8 +92,8 @@ void LIVMapper::readParameters(rclcpp::Node::SharedPtr &node)
   this->node->declare_parameter<double>("rolling_shutter.td_step_cap", 0.0005);
   this->node->declare_parameter<double>("rolling_shutter.td_lambda", 100.0);
   this->node->declare_parameter<double>("rolling_shutter.td_min_jac_sq", 1.0);
-  this->node->declare_parameter<bool>("uav.imu_rate_odom", false);
-  this->node->declare_parameter<bool>("uav.gravity_align_en", false);
+  this->node->declare_parameter<bool>("uav.imu_rate_odom", true);
+  this->node->declare_parameter<bool>("uav.gravity_align_en", true);
 
   this->node->declare_parameter<std::string>("evo.seq_name", "01");
   this->node->declare_parameter<bool>("evo.pose_output_en", false);
@@ -124,6 +131,9 @@ void LIVMapper::readParameters(rclcpp::Node::SharedPtr &node)
   this->node->declare_parameter<int>("publish.pub_scan_num", 1);
   this->node->declare_parameter<bool>("publish.pub_effect_point_en", false);
   this->node->declare_parameter<bool>("publish.dense_map_en", false);
+  this->node->declare_parameter<bool>("publish.scan_publish_en", true);
+  this->node->declare_parameter<bool>("publish.scan_bodyframe_pub_en", true);
+  this->node->declare_parameter<bool>("publish.map_en", false);
 
   // get parameter
   this->node->get_parameter("common.lid_topic", lid_topic);
@@ -192,6 +202,9 @@ void LIVMapper::readParameters(rclcpp::Node::SharedPtr &node)
   this->node->get_parameter("publish.pub_scan_num", pub_scan_num);
   this->node->get_parameter("publish.pub_effect_point_en", pub_effect_point_en);
   this->node->get_parameter("publish.dense_map_en", dense_map_en);
+  this->node->get_parameter("publish.scan_publish_en", scan_publish_en);
+  this->node->get_parameter("publish.scan_bodyframe_pub_en", scan_bodyframe_pub_en);
+  this->node->get_parameter("publish.map_en", map_publish_en);
 }
 
 void LIVMapper::initializeComponents(rclcpp::Node::SharedPtr &node) 
@@ -310,11 +323,14 @@ void LIVMapper::initializeSubscribersAndPublishers(rclcpp::Node::SharedPtr &node
   sub_img = this->node->create_subscription<sensor_msgs::msg::Image>(img_topic, 200000, std::bind(&LIVMapper::img_cbk, this, std::placeholders::_1));
   
   pubLaserCloudFullRes = this->node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 100);
+  pubLaserCloudBody = this->node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 20);
   pubNormal = this->node->create_publisher<visualization_msgs::msg::MarkerArray>("/visualization_marker", 100);
   pubSubVisualMap = this->node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_visual_sub_map_before", 100);
   pubLaserCloudEffect = this->node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_effected", 100);
   pubLaserCloudMap = this->node->create_publisher<sensor_msgs::msg::PointCloud2>("/Laser_map", 100);
-  pubOdomAftMapped = this->node->create_publisher<nav_msgs::msg::Odometry>("/aft_mapped_to_init", 10);
+  if (map_publish_en)
+    map_publish_timer = this->node->create_wall_timer(1s, std::bind(&LIVMapper::publish_map, this));
+  pubOdomAftMapped = this->node->create_publisher<nav_msgs::msg::Odometry>("/Odometry", 20);
   pubPath = this->node->create_publisher<nav_msgs::msg::Path>("/path", 10);
   plane_pub = this->node->create_publisher<visualization_msgs::msg::Marker>("/planner_normal", 1);
   voxel_pub = this->node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxels", 1);
@@ -323,7 +339,7 @@ void LIVMapper::initializeSubscribersAndPublishers(rclcpp::Node::SharedPtr &node
   pubLaserCloudDynDbg = this->node->create_publisher<sensor_msgs::msg::PointCloud2>("/dyn_obj_dbg_hist", 100);
   mavros_pose_publisher = this->node->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", 10);
   pubImage = it.advertise("/rgb_img", 1);
-  pubImuPropOdom = this->node->create_publisher<nav_msgs::msg::Odometry>("/LIVO2/imu_propagate", 10000);
+  pubImuPropOdom = this->node->create_publisher<nav_msgs::msg::Odometry>("/Odometry_imu", rclcpp::SensorDataQoS());
   imu_prop_timer = this->node->create_wall_timer(0.004s, std::bind(&LIVMapper::imu_prop_callback, this));
   voxelmap_manager->voxel_map_pub_= this->node->create_publisher<visualization_msgs::msg::MarkerArray>("/planes", 10000);
 }
@@ -352,6 +368,12 @@ void LIVMapper::gravityAlignment()
     _state.rot_end = G_R_I0 * _state.rot_end;
     _state.vel_end = G_R_I0 * _state.vel_end;
     _state.gravity = G_R_I0 * _state.gravity;
+    // Position, velocity and gravity errors are expressed in the world frame.
+    MD(DIM_STATE, DIM_STATE) rotate_cov = MD(DIM_STATE, DIM_STATE)::Identity();
+    rotate_cov.block<3, 3>(3, 3) = G_R_I0;
+    rotate_cov.block<3, 3>(7, 7) = G_R_I0;
+    rotate_cov.block<3, 3>(16, 16) = G_R_I0;
+    _state.cov = rotate_cov * _state.cov * rotate_cov.transpose();
     gravity_align_finished = true;
     std::cout << "Gravity Alignment Finished" << std::endl;
   }
@@ -586,7 +608,11 @@ void LIVMapper::handleLIO()
   
   euler_cur = RotMtoEuler(_state.rot_end);
   geoQuat = tf::createQuaternionMsgFromRollPitchYaw(euler_cur(0), euler_cur(1), euler_cur(2));
-  publish_odometry(pubOdomAftMapped);
+  const auto &measure = LidarMeasures.measures.back();
+  const auto stamp = sec2Stamp(LidarMeasures.last_lio_update_time);
+  const auto *scan_imu = measure.imu.empty() ? nullptr : measure.imu.back().get();
+  pubOdomAftMapped->publish(makeOdometry(_state, stamp, scan_imu));
+  if (scan_publish_en && scan_bodyframe_pub_en) publish_body_cloud(stamp);
 
   double t3 = omp_get_wtime();
 
@@ -621,6 +647,11 @@ void LIVMapper::handleLIO()
     RGBpointBodyToWorld(&laserCloudFullRes->points[i], &laserCloudWorld->points[i]);
   }
   *pcl_w_wait_pub = *laserCloudWorld;
+  if (map_publish_en)
+  {
+    latest_map_scan = laserCloudWorld;
+    latest_map_scan_stamp = stamp;
+  }
 
   publish_frame_world(pubLaserCloudFullRes, vio_manager);
   if (pub_effect_point_en) publish_effect_world(pubLaserCloudEffect, voxelmap_manager->ptpl_list_);
@@ -735,11 +766,14 @@ void LIVMapper::run(rclcpp::Node::SharedPtr &node)
 
 void LIVMapper::prop_imu_once(StatesGroup &imu_prop_state, const double dt, V3D acc_avr, V3D angvel_avr)
 {
-  double mean_acc_norm = p_imu->IMU_mean_acc_norm;
+  if (dt <= 0.0) return;
+
+  const double mean_acc_norm = p_imu->IMU_mean_acc_norm;
   acc_avr = acc_avr * G_m_s2 / mean_acc_norm - imu_prop_state.bias_a;
   angvel_avr -= imu_prop_state.bias_g;
 
   M3D Exp_f = Exp(angvel_avr, dt);
+  p_imu->propagateCovariance(imu_prop_state, imu_prop_state.rot_end, Exp_f, acc_avr, dt);
   /* propogation of IMU attitude */
   imu_prop_state.rot_end = imu_prop_state.rot_end * Exp_f;
 
@@ -758,7 +792,7 @@ void LIVMapper::imu_prop_callback()
   if (p_imu->imu_need_init || !new_imu || !ekf_finish_once) { return; }
   mtx_buffer_imu_prop.lock();
   new_imu = false; // 控制 propagate 频率和 IMU 频率一致
-  if (imu_prop_enable && !prop_imu_buffer.empty())
+  if (imu_prop_enable && !prop_imu_buffer.empty() && stamp2Sec(newest_imu.header.stamp) >= latest_ekf_time)
   {
     static double last_t_from_lidar_end_time = 0;
     if (state_update_flg)
@@ -792,24 +826,7 @@ void LIVMapper::imu_prop_callback()
       last_t_from_lidar_end_time = t_from_lidar_end_time;
     }
 
-    V3D posi, vel_i;
-    Eigen::Quaterniond q;
-    posi = imu_propagate.pos_end;
-    vel_i = imu_propagate.vel_end;
-    q = Eigen::Quaterniond(imu_propagate.rot_end);
-    imu_prop_odom.header.frame_id = "world";
-    imu_prop_odom.header.stamp = newest_imu.header.stamp;
-    imu_prop_odom.pose.pose.position.x = posi.x();
-    imu_prop_odom.pose.pose.position.y = posi.y();
-    imu_prop_odom.pose.pose.position.z = posi.z();
-    imu_prop_odom.pose.pose.orientation.w = q.w();
-    imu_prop_odom.pose.pose.orientation.x = q.x();
-    imu_prop_odom.pose.pose.orientation.y = q.y();
-    imu_prop_odom.pose.pose.orientation.z = q.z();
-    imu_prop_odom.twist.twist.linear.x = vel_i.x();
-    imu_prop_odom.twist.twist.linear.y = vel_i.y();
-    imu_prop_odom.twist.twist.linear.z = vel_i.z();
-    pubImuPropOdom->publish(imu_prop_odom);
+    pubImuPropOdom->publish(makeOdometry(imu_propagate, newest_imu.header.stamp, &newest_imu));
   }
   mtx_buffer_imu_prop.unlock();
 }
@@ -1344,7 +1361,7 @@ void LIVMapper::publish_img_rgb(const image_transport::Publisher &pubImage, VIOM
   cv::Mat img_rgb = vio_manager->img_cp.clone(); // deep copy to prevent FFMPEG transport buffer corruption
   cv_bridge::CvImage out_msg;
   out_msg.header.stamp = this->node->get_clock()->now();
-  // out_msg.header.frame_id = "camera_init";
+  // out_msg.header.frame_id = kOdomFrame;
   out_msg.encoding = sensor_msgs::image_encodings::BGR8;
   out_msg.image = img_rgb;
   pubImage.publish(out_msg.toImageMsg());
@@ -1405,9 +1422,13 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
   { 
     pcl::toROSMsg(*pcl_w_wait_pub, laserCloudmsg); 
   }
-  laserCloudmsg.header.stamp = this->node->get_clock()->now(); //.fromSec(last_timestamp_lidar);
-  laserCloudmsg.header.frame_id = "camera_init";
-  pubLaserCloudFullRes->publish(laserCloudmsg);
+  if (scan_publish_en && !laserCloudmsg.data.empty())
+  {
+    const auto &measure = LidarMeasures.measures.back();
+    laserCloudmsg.header.stamp = sec2Stamp(LidarMeasures.lio_vio_flg == VIO ? measure.vio_time : LidarMeasures.last_lio_update_time);
+    laserCloudmsg.header.frame_id = kOdomFrame;
+    pubLaserCloudFullRes->publish(laserCloudmsg);
+  }
 
   /**************** save map ****************/
   /* 1. make sure you have enough memories
@@ -1520,8 +1541,8 @@ void LIVMapper::publish_visual_sub_map(const rclcpp::Publisher<sensor_msgs::msg:
   {
     sensor_msgs::msg::PointCloud2 laserCloudmsg;
     pcl::toROSMsg(*sub_pcl_visual_map_pub, laserCloudmsg);
-    laserCloudmsg.header.stamp = this->node->get_clock()->now();
-    laserCloudmsg.header.frame_id = "camera_init";
+    laserCloudmsg.header.stamp = sec2Stamp(LidarMeasures.last_lio_update_time);
+    laserCloudmsg.header.frame_id = kOdomFrame;
     pubSubVisualMap->publish(laserCloudmsg);
   }
 }
@@ -1538,8 +1559,8 @@ void LIVMapper::publish_effect_world(const rclcpp::Publisher<sensor_msgs::msg::P
   }
   sensor_msgs::msg::PointCloud2 laserCloudFullRes3;
   pcl::toROSMsg(*laserCloudWorld, laserCloudFullRes3);
-  laserCloudFullRes3.header.stamp = this->node->get_clock()->now();
-  laserCloudFullRes3.header.frame_id = "camera_init";
+  laserCloudFullRes3.header.stamp = sec2Stamp(LidarMeasures.last_lio_update_time);
+  laserCloudFullRes3.header.frame_id = kOdomFrame;
   pubLaserCloudEffect->publish(laserCloudFullRes3);
 }
 
@@ -1554,31 +1575,86 @@ template <typename T> void LIVMapper::set_posestamp(T &out)
   out.orientation.w = geoQuat.w;
 }
 
-void LIVMapper::publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr &pubOdomAftMapped)
+nav_msgs::msg::Odometry LIVMapper::makeOdometry(const StatesGroup &state, const rclcpp::Time &stamp,
+                                                const sensor_msgs::msg::Imu *imu) const
 {
-  odomAftMapped.header.frame_id = "camera_init";
-  odomAftMapped.child_frame_id = "aft_mapped";
-  odomAftMapped.header.stamp = this->node->get_clock()->now(); //.ros::Time()fromSec(last_timestamp_lidar);
-  set_posestamp(odomAftMapped.pose.pose);
+  nav_msgs::msg::Odometry odom;
+  odom.header.frame_id = kOdomFrame;
+  odom.child_frame_id = kBodyFrame;
+  odom.header.stamp = stamp;
 
-  static std::shared_ptr<tf2_ros::TransformBroadcaster> br;
-  br = std::make_shared<tf2_ros::TransformBroadcaster>(this->node);
-  tf2::Transform transform;
-  tf2::Quaternion q;
-  transform.setOrigin(tf2::Vector3(_state.pos_end(0), _state.pos_end(1), _state.pos_end(2)));
-  q.setW(geoQuat.w);
-  q.setX(geoQuat.x);
-  q.setY(geoQuat.y);
-  q.setZ(geoQuat.z);
-  transform.setRotation(q);
-  br->sendTransform(geometry_msgs::msg::TransformStamped(createTransformStamped(transform, odomAftMapped.header.stamp, "camera_init", "aft_mapped")));
-  pubOdomAftMapped->publish(odomAftMapped);
+  auto &pose = odom.pose.pose;
+  pose.position.x = state.pos_end.x();
+  pose.position.y = state.pos_end.y();
+  pose.position.z = state.pos_end.z();
+  const Eigen::Quaterniond orientation(state.rot_end);
+  pose.orientation.x = orientation.x();
+  pose.orientation.y = orientation.y();
+  pose.orientation.z = orientation.z();
+  pose.orientation.w = orientation.w();
+
+  const V3D velocity_body = state.rot_end.transpose() * state.vel_end;
+  auto &twist = odom.twist.twist;
+  twist.linear.x = velocity_body.x();
+  twist.linear.y = velocity_body.y();
+  twist.linear.z = velocity_body.z();
+
+  // State pose error order is [body rotation, world position]. ROS pose
+  // covariance uses [position, fixed-frame rotation] in the parent frame.
+  MD(6, 6) pose_jacobian = MD(6, 6)::Zero();
+  pose_jacobian.block<3, 3>(0, 3).setIdentity();
+  pose_jacobian.block<3, 3>(3, 0) = state.rot_end;
+  const MD(6, 6) pose_cov = pose_jacobian * state.cov.block<6, 6>(0, 0) * pose_jacobian.transpose();
+  using RosCovariance = Eigen::Matrix<double, 6, 6, Eigen::RowMajor>;
+  Eigen::Map<RosCovariance> pose_cov_out(odom.pose.covariance.data());
+  pose_cov_out = pose_cov;
+
+  Eigen::Map<RosCovariance> twist_cov(odom.twist.covariance.data());
+  twist_cov.block<3, 3>(0, 0) = state.rot_end.transpose() * state.cov.block<3, 3>(7, 7) * state.rot_end;
+  if (imu)
+  {
+    const V3D angular_velocity = V3D(imu->angular_velocity.x, imu->angular_velocity.y, imu->angular_velocity.z) - state.bias_g;
+    twist.angular.x = angular_velocity.x();
+    twist.angular.y = angular_velocity.y();
+    twist.angular.z = angular_velocity.z();
+    twist_cov.block<3, 3>(3, 3) = state.cov.block<3, 3>(10, 10);
+    twist_cov.block<3, 3>(3, 3).diagonal() += p_imu->cov_gyr;
+  }
+  return odom;
+}
+
+void LIVMapper::publish_body_cloud(const rclcpp::Time &stamp)
+{
+  PointCloudXYZI body_cloud(feats_undistort->size(), 1);
+  for (size_t i = 0; i < body_cloud.size(); ++i)
+    RGBpointBodyLidarToIMU(&feats_undistort->points[i], &body_cloud.points[i]);
+
+  sensor_msgs::msg::PointCloud2 cloud;
+  pcl::toROSMsg(body_cloud, cloud);
+  cloud.header.stamp = stamp;
+  cloud.header.frame_id = kBodyFrame;
+  pubLaserCloudBody->publish(cloud);
+}
+
+void LIVMapper::publish_map()
+{
+  if (!latest_map_scan) return;
+  const auto stamp = latest_map_scan_stamp;
+  if (!published_map.empty() && stamp == published_map_stamp) return;
+
+  published_map += *latest_map_scan;
+  published_map_stamp = stamp;
+  sensor_msgs::msg::PointCloud2 cloud;
+  pcl::toROSMsg(published_map, cloud);
+  cloud.header.stamp = stamp;
+  cloud.header.frame_id = kOdomFrame;
+  pubLaserCloudMap->publish(cloud);
 }
 
 void LIVMapper::publish_mavros(const rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr &mavros_pose_publisher)
 {
-  msg_body_pose.header.stamp = this->node->get_clock()->now();
-  msg_body_pose.header.frame_id = "camera_init";
+  msg_body_pose.header.stamp = sec2Stamp(LidarMeasures.last_lio_update_time);
+  msg_body_pose.header.frame_id = kOdomFrame;
   set_posestamp(msg_body_pose.pose);
   mavros_pose_publisher->publish(msg_body_pose);
 }
@@ -1586,8 +1662,9 @@ void LIVMapper::publish_mavros(const rclcpp::Publisher<geometry_msgs::msg::PoseS
 void LIVMapper::publish_path(const rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr &pubPath)
 {
   set_posestamp(msg_body_pose.pose);
-  msg_body_pose.header.stamp = this->node->get_clock()->now();
-  msg_body_pose.header.frame_id = "camera_init";
+  msg_body_pose.header.stamp = sec2Stamp(LidarMeasures.last_lio_update_time);
+  msg_body_pose.header.frame_id = kOdomFrame;
+  path.header.stamp = msg_body_pose.header.stamp;
   path.poses.push_back(msg_body_pose);
   pubPath->publish(path);
 }

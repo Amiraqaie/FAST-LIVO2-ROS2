@@ -219,7 +219,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /aft_mapped_to_init
+            Value: /Odometry
           Value: true
       Enabled: true
       Name: Odometry
@@ -563,7 +563,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /aft_mapped_to_init
+        Value: /Odometry
       Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: false
@@ -632,7 +632,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
-    Fixed Frame: camera_init
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -691,7 +691,7 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.009999999776482582
       Pitch: 0.3797968327999115
-      Target Frame: aft_mapped
+      Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
       Yaw: 2.6372792720794678
     Saved:

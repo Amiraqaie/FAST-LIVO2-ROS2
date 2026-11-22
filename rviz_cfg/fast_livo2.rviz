@@ -71,7 +71,7 @@ Visualization Manager:
       Length: 0.699999988079071
       Name: Axes
       Radius: 0.10000000149011612
-      Reference Frame: camera_init
+      Reference Frame: odom
       Value: true
     - Class: rviz_common/Group
       Displays:
@@ -218,7 +218,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /aft_mapped_to_init
+            Value: /Odometry
           Value: true
       Enabled: true
       Name: Odometry
@@ -562,7 +562,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /aft_mapped_to_init
+        Value: /Odometry
       Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: false
@@ -631,7 +631,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
-    Fixed Frame: camera_init
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:

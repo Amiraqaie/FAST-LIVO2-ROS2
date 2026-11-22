@@ -22,8 +22,6 @@ which is included as part of this source code package.
 #include <cv_bridge/cv_bridge.h>
 #endif
 #include <image_transport/image_transport.hpp>
-#include <tf2_ros/transform_broadcaster.h>
-#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <vikit/camera_loader.h>
 
@@ -62,7 +60,10 @@ public:
   void publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubLaserCloudFullRes, VIOManagerPtr vio_manager);
   void publish_visual_sub_map(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubSubVisualMap);
   void publish_effect_world(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubLaserCloudEffect, const std::vector<PointToPlane> &ptpl_list);
-  void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr &pmavros_pose_publisherubOdomAftMapped);
+  nav_msgs::msg::Odometry makeOdometry(const StatesGroup &state, const rclcpp::Time &stamp,
+                                      const sensor_msgs::msg::Imu *imu) const;
+  void publish_body_cloud(const rclcpp::Time &stamp);
+  void publish_map();
   void publish_mavros(const rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr &mavros_pose_publisher);
   void publish_path(const rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr &pubPath);
   void readParameters(rclcpp::Node::SharedPtr &node);
@@ -103,7 +104,6 @@ public:
   deque<sensor_msgs::msg::Imu> prop_imu_buffer;
   sensor_msgs::msg::Imu newest_imu;
   double latest_ekf_time;
-  nav_msgs::msg::Odometry imu_prop_odom;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubImuPropOdom;
   double imu_time_offset = 0.0;
   double lidar_time_offset = 0.0;
@@ -114,6 +114,12 @@ public:
 
   bool lidar_pushed = false, imu_en, gravity_est_en, flg_reset = false, ba_bg_est_en = true;
   bool dense_map_en = false;
+  bool scan_publish_en = true, scan_bodyframe_pub_en = true, map_publish_en = false;
+  PointCloudXYZI published_map;
+  PointCloudXYZI::ConstPtr latest_map_scan;
+  rclcpp::Time latest_map_scan_stamp;
+  rclcpp::Time published_map_stamp;
+  rclcpp::TimerBase::SharedPtr map_publish_timer;
   int img_en = 1, imu_int_frame = 3;
   bool normal_en = true;
   bool exposure_estimate_en = false;
@@ -177,7 +183,6 @@ public:
   StatesGroup  state_propagat;
 
   nav_msgs::msg::Path path;
-  nav_msgs::msg::Odometry odomAftMapped;
   geometry_msgs::msg::Quaternion geoQuat;
   geometry_msgs::msg::PoseStamped msg_body_pose;
 
@@ -195,6 +200,7 @@ public:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_img;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFullRes;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudBody;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubNormal;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubSubVisualMap;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudEffect;

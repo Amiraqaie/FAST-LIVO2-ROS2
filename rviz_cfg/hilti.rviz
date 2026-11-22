@@ -202,7 +202,7 @@ Visualization Manager:
             Shaft Length: 0.800000011920929
             Shaft Radius: 0.5
             Value: Axes
-          Topic: /aft_mapped_to_init
+          Topic: /Odometry
           Unreliable: false
           Value: true
       Enabled: true
@@ -483,7 +483,7 @@ Visualization Manager:
         Shaft Length: 1
         Shaft Radius: 0.05000000074505806
         Value: Axes
-      Topic: /aft_mapped_to_init
+      Topic: /Odometry
       Unreliable: false
       Value: false
     - Class: rviz/MarkerArray
@@ -526,7 +526,7 @@ Visualization Manager:
   Global Options:
     Background Color: 238; 238; 236
     Default Light: true
-    Fixed Frame: camera_init
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:

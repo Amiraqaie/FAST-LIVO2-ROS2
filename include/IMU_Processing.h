@@ -48,6 +48,8 @@ public:
   void disable_exposure_est();
   void Process2(LidarMeasureGroup &lidar_meas, StatesGroup &stat, PointCloudXYZI::Ptr cur_pcl_un_);
   void UndistortPcl(LidarMeasureGroup &lidar_meas, StatesGroup &state_inout, PointCloudXYZI &pcl_out);
+  void propagateCovariance(StatesGroup &state, const M3D &rotation, const M3D &rotation_step,
+                           const V3D &acceleration, double dt) const;
 
   ofstream fout_imu;
   double IMU_mean_acc_norm;
