@@ -129,6 +129,10 @@ void Preprocess::avia_handler(const livox_custom_msg::CustomMsg::SharedPtr &msg)
         pl_full[i].intensity = msg->points[i].reflectivity;
         pl_full[i].curvature = msg->points[i].offset_time / float(1000000); // use curvature as time of each laser points
 
+        const auto &point = pl_full[i];
+        const double range_sq = point.x * point.x + point.y * point.y + point.z * point.z;
+        if (!std::isfinite(range_sq) || range_sq < squaredBlindRange()) continue;
+
         bool is_new = false;
         if ((abs(pl_full[i].x - pl_full[i - 1].x) > 1e-7) || (abs(pl_full[i].y - pl_full[i - 1].y) > 1e-7) ||
             (abs(pl_full[i].z - pl_full[i - 1].z) > 1e-7))
@@ -191,7 +195,7 @@ void Preprocess::avia_handler(const livox_custom_msg::CustomMsg::SharedPtr &msg)
 
         if (valid_num % point_filter_num == 0)
         {
-          if (pl_full[i].x * pl_full[i].x + pl_full[i].y * pl_full[i].y + pl_full[i].z * pl_full[i].z >= blind_sqr)
+          if (pl_full[i].x * pl_full[i].x + pl_full[i].y * pl_full[i].y + pl_full[i].z * pl_full[i].z >= squaredBlindRange())
           {
             pl_surf.push_back(pl_full[i]);
             // if (i % 100 == 0 || i == 0) printf("pl_full[i].curvature: %f \n",
@@ -224,7 +228,7 @@ void Preprocess::l515_handler(const sensor_msgs::msg::PointCloud2::ConstSharedPt
 
     double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
 
-    if (range < blind_sqr) continue;
+    if (range < squaredBlindRange()) continue;
 
     Eigen::Vector3d pt_vec;
     PointType added_pt;
@@ -266,7 +270,7 @@ void Preprocess::oust64_handler(const sensor_msgs::msg::PointCloud2::ConstShared
     {
       double range =
           pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
-      if (range < blind_sqr) continue;
+      if (range < squaredBlindRange()) continue;
       Eigen::Vector3d pt_vec;
       PointType added_pt;
       added_pt.x = pl_orig.points[i].x;
@@ -316,7 +320,7 @@ void Preprocess::oust64_handler(const sensor_msgs::msg::PointCloud2::ConstShared
       double range =
           pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
 
-      if (range < blind_sqr) continue;
+      if (range < squaredBlindRange()) continue;
 
       Eigen::Vector3d pt_vec;
       PointType added_pt;
@@ -501,7 +505,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::msg::PointCloud2::ConstShar
       // prints);
       if (i % point_filter_num == 0)
       {
-        if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > blind_sqr)
+        if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > squaredBlindRange())
         {
           pl_surf.points.push_back(added_pt);
           // printf("time mode: %d time: %d \n", given_offset_time,
@@ -540,7 +544,7 @@ void Preprocess::Pandar128_handler(const sensor_msgs::msg::PointCloud2::ConstSha
 
     if (i % point_filter_num == 0)
     {
-      if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > blind_sqr)
+      if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > squaredBlindRange())
       {
         pl_surf.points.push_back(added_pt);
         // printf("time mode: %d time: %d \n", given_offset_time,
@@ -697,7 +701,7 @@ void Preprocess::xt32_handler(const sensor_msgs::msg::PointCloud2::ConstSharedPt
       // prints);
       if (i % point_filter_num == 0)
       {
-        if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > blind_sqr)
+        if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > squaredBlindRange())
         {
           pl_surf.points.push_back(added_pt);
           // printf("time mode: %d time: %d \n", given_offset_time,
@@ -728,7 +732,7 @@ void Preprocess::robosense_handler(const sensor_msgs::msg::PointCloud2::ConstSha
     const auto& pt = pl_orig.points[i];
     const double x = pt.x, y = pt.y, z = pt.z;
     const double dist_sqr = x * x + y * y + z * z;
-    const bool is_valid = (dist_sqr >= blind_sqr) && !std::isnan(x) && !std::isnan(y) && !std::isnan(z);
+    const bool is_valid = (dist_sqr >= squaredBlindRange()) && !std::isnan(x) && !std::isnan(y) && !std::isnan(z);
     if (!is_valid) continue;
 
     PointType added_pt;
@@ -766,7 +770,7 @@ void Preprocess::mid360_handler(const sensor_msgs::msg::PointCloud2::ConstShared
 
     const auto &pt = pl_orig.points[i];
     double dist_sqr = pt.x * pt.x + pt.y * pt.y + pt.z * pt.z;
-    if (dist_sqr < blind * blind) continue;
+    if (dist_sqr < squaredBlindRange()) continue;
 
     PointType added_pt;
     added_pt.normal_x = 0;
@@ -792,7 +796,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   }
   uint head = 0;
 
-  while (types[head].range < blind_sqr)
+  while (head < types.size() && types[head].range < squaredBlindRange())
   {
     head++;
   }
@@ -811,7 +815,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
 
   for (uint i = head; i < plsize2; i++)
   {
-    if (types[i].range < blind_sqr) { continue; }
+    if (types[i].range < squaredBlindRange()) { continue; }
 
     i2 = i;
 
@@ -896,7 +900,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   plsize2 = plsize > 3 ? plsize - 3 : 0;
   for (uint i = head + 3; i < plsize2; i++)
   {
-    if (types[i].range < blind_sqr || types[i].ftype >= Real_Plane) { continue; }
+    if (types[i].range < squaredBlindRange() || types[i].ftype >= Real_Plane) { continue; }
 
     if (types[i - 1].dista < 1e-16 || types[i].dista < 1e-16) { continue; }
 
@@ -908,7 +912,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
       int m = -1;
       if (j == 1) { m = 1; }
 
-      if (types[i + m].range < blind_sqr)
+      if (types[i + m].range < squaredBlindRange())
       {
         if (types[i].range > inf_bound) { types[i].edj[j] = Nr_inf; }
         else { types[i].edj[j] = Nr_blind; }
@@ -956,7 +960,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   double ratio;
   for (uint i = head + 1; i < plsize2; i++)
   {
-    if (types[i].range < blind_sqr || types[i - 1].range < blind_sqr || types[i + 1].range < blind_sqr) { continue; }
+    if (types[i].range < squaredBlindRange() || types[i - 1].range < squaredBlindRange() || types[i + 1].range < squaredBlindRange()) { continue; }
 
     if (types[i - 1].dista < 1e-8 || types[i].dista < 1e-8) { continue; }
 
@@ -1039,7 +1043,7 @@ int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, ui
 
   for (i_nex = i_cur; i_nex < i_cur + group_size; i_nex++)
   {
-    if (types[i_nex].range < blind_sqr)
+    if (types[i_nex].range < squaredBlindRange())
     {
       curr_direct.setZero();
       return 2;
@@ -1051,7 +1055,7 @@ int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, ui
   {
     if ((i_cur >= pl.size()) || (i_nex >= pl.size())) break;
 
-    if (types[i_nex].range < blind_sqr)
+    if (types[i_nex].range < squaredBlindRange())
     {
       curr_direct.setZero();
       return 2;
@@ -1138,11 +1142,11 @@ bool Preprocess::edge_jump_judge(const PointCloudXYZI &pl, vector<orgtype> &type
 {
   if (nor_dir == 0)
   {
-    if (types[i - 1].range < blind_sqr || types[i - 2].range < blind_sqr) { return false; }
+    if (types[i - 1].range < squaredBlindRange() || types[i - 2].range < squaredBlindRange()) { return false; }
   }
   else if (nor_dir == 1)
   {
-    if (types[i + 1].range < blind_sqr || types[i + 2].range < blind_sqr) { return false; }
+    if (types[i + 1].range < squaredBlindRange() || types[i + 2].range < squaredBlindRange()) { return false; }
   }
   double d1 = types[i + nor_dir - 1].dista;
   double d2 = types[i + 3 * nor_dir - 2].dista;
